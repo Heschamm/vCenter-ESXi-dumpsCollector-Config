@@ -32,9 +32,9 @@ INSTALLATION
 ------------
 1. Upload script to vCenter Server Appliance
 2. Ensure execute permissions:
-   # chmod +x dumpsCollector.py
+   $ chmod +x dumpsCollector.py
 3. Run using Python command
-   # python dumpsCollector.py
+   $ python dumpsCollector.py
 
 USAGE
 -----
