@@ -108,3 +108,4 @@ Test in your environment before production use.
 VERSION
 -------
 v1.0 - Complete coredump automation with Python
+v1.1 - Added more options regarding re-configuring hosts with already available core network configuration in place
