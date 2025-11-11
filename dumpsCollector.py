@@ -318,117 +318,161 @@ def main():
         # Check if all hosts failed to connect
         if len(unknown_hosts) == len(hosts) and len(enabled_hosts) == 0 and len(disabled_hosts) == 0:
             print(f"\n{RED}✗ Could not connect to any ESXi hosts. Please check the credentials and try again.{NC}")
-        elif not disabled_hosts and not unknown_hosts:
-            print(f"\n{GREEN}✓ All ESXi hosts already have coredump network enabled. No configuration needed.{NC}")
-        elif not disabled_hosts and unknown_hosts:
-            print(f"\n{RED}✗ Could not connect to {len(unknown_hosts)} ESXi hosts. Please check credentials and network connectivity.{NC}")
-            if enabled_hosts:
-                print(f"{GREEN}✓ The {len(enabled_hosts)} hosts that were reachable already have coredump enabled.{NC}")
-        else:
-            print(f"\nProceeding with configuration for {len(disabled_hosts)} disabled hosts...")
+            return
+        
+        # Ask about reconfiguration if some hosts are already enabled
+        hosts_to_configure = disabled_hosts.copy()
+        
+        if enabled_hosts:
+            print(f"\n{YELLOW}Note: {len(enabled_hosts)} hosts already have core dump network configuration.{NC}")
+            reconfigure = input("Do you want to reconfigure some or all hosts? (y/N): ").strip().lower()
             
-            # Coredump Server Configuration
-            print_section("Coredump Server Configuration")
-            print("Where should ESXi hosts send core dumps?")
-            
-            # Show current detected IP and allow manual override
-            print(f"Detected vCenter IP: {vc_ip}")
-            use_detected_ip = input(f"Use detected vCenter IP ({vc_ip}) as coredump server? (Y/n): ").strip().lower()
-            
-            if use_detected_ip == 'n':
-                coredump_server_ip = input("Enter coredump server IP address: ").strip()
-            else:
-                coredump_server_ip = vc_ip
-            
-            print("\nEnter the management vmk interface for ESXi hosts.")
-            print("Reference format: vmk0, vmk1, etc.")
-            vmk_interface = input("VMK interface (e.g., vmk0): ").strip()
-            
-            use_default_port = input("Use default port 6500 for coredump? (Y/n): ").strip().lower()
-            if use_default_port == 'n':
-                coredump_port = input("Enter coredump server port: ").strip()
-            else:
-                coredump_port = "6500"
-            
-            print(f"\n{GREEN}Coredump configuration summary:{NC}")
-            print(f"  Server IP: {coredump_server_ip}")
-            print(f"  VMK Interface: {vmk_interface}")
-            print(f"  Port: {coredump_port}")
-            
-            # Test VMK Connectivity for ALL disabled hosts (they are already confirmed reachable)
-            if disabled_hosts:
-                print_section("Testing VMK Connectivity")
-                for host in disabled_hosts:
-                    password = esxi_passwords[host]
-                    print(f"\nTesting connectivity from {host}...")
-                    
-                    success, ping_info = test_vmk_connectivity(host, password, vmk_interface, coredump_server_ip)
-                    
-                    if success:
-                        if ping_info:
-                            print(f"{GREEN}✓ vmkping to {coredump_server_ip} via {vmk_interface} successful ({ping_info}ms){NC}")
-                        else:
-                            print(f"{GREEN}✓ vmkping to {coredump_server_ip} via {vmk_interface} successful{NC}")
-                    else:
-                        print(f"{RED}✗ vmkping to {coredump_server_ip} via {vmk_interface} failed{NC}")
-                        print(f"  Error: {ping_info}")
+            if reconfigure == 'y':
+                print("\nReconfiguration options:")
+                print("1. Reconfigure ALL hosts")
+                print("2. Reconfigure only ENABLED hosts")
+                print("3. Select specific hosts to reconfigure")
                 
-                # Configure ALL disabled hosts (they are already confirmed reachable)
-                print_section("Configuring Disabled Hosts")
-                for host in disabled_hosts:
-                    password = esxi_passwords[host]
-                    print(f"\n{CYAN}=== {host} ==={NC}")
-                    
-                    print("Configuring coredump network on host...")
-                    
-                    success, message = configure_coredump(host, password, coredump_server_ip, vmk_interface, coredump_port)
-                    
-                    if success:
-                        print(f"{GREEN}✓ Configuration completed successfully{NC}")
-                        
-                        print("Verifying new configuration...")
-                        new_config, config_success = get_coredump_config(host, password)
-                        
-                        if config_success and new_config.get('enabled') == 'true':
-                            print(f"{GREEN}✓ Success: Coredump network is now enabled on {host}{NC}")
-                            print(f"  Enabled: {new_config.get('enabled', 'N/A')}")
-                            print(f"  Network Server IP: {new_config.get('server_ip', 'N/A')}")
-                            print(f"  Host VNic: {new_config.get('interface', 'N/A')}")
-                            print(f"  Network Server Port: {new_config.get('port', 'N/A')}")
-                        else:
-                            print(f"{RED}✗ Warning: Configuration completed but status still shows disabled{NC}")
-                    else:
-                        print(f"{RED}✗ {message}{NC}")
-            
-            # Final status check for ALL hosts (enabled, disabled, and unknown)
-            print_section("Final Status Check")
-            print()
-            print(f"{'Hostname':44} | {'Status':8} | {'Server IP':15} | {'Interface':9} | {'Port':5}")
-            print(f"{'-'*45}+{'-'*10}+{'-'*17}+{'-'*11}+{'-'*6}")
-            
-            # Check all hosts again for final status
-            for host in hosts:
-                password = esxi_passwords[host]
-                config, success = get_coredump_config(host, password)
+                choice = input("\nEnter your choice (1-3): ").strip()
                 
-                display_host = host[:43]
-                
-                if success:
-                    enabled = config.get('enabled', 'N/A')
-                    server_ip = config.get('server_ip', 'N/A')
-                    interface = config.get('interface', 'N/A')
-                    port = config.get('port', 'N/A')
+                if choice == '1':
+                    hosts_to_configure = hosts.copy()
+                    print(f"{GREEN}✓ Will reconfigure ALL {len(hosts)} hosts{NC}")
+                elif choice == '2':
+                    hosts_to_configure = enabled_hosts.copy()
+                    print(f"{GREEN}✓ Will reconfigure {len(enabled_hosts)} enabled hosts{NC}")
+                elif choice == '3':
+                    print("\nSelect hosts to reconfigure (enter numbers separated by commas):")
+                    for i, host in enumerate(hosts, 1):
+                        status = "ENABLED" if host in enabled_hosts else "DISABLED"
+                        print(f"  {i}. {host} [{status}]")
                     
-                    if enabled == 'true':
-                        status_color = GREEN
-                        status_text = "Enabled"
-                    else:
-                        status_color = RED
-                        status_text = "Disabled"
-                    
-                    print(f"{display_host:44} | {status_color}{status_text:8}{NC} | {server_ip:15} | {interface:9} | {port:5}")
+                    selected = input("\nEnter host numbers (e.g., 1,3,5): ").strip()
+                    try:
+                        selected_indices = [int(x.strip()) - 1 for x in selected.split(',')]
+                        hosts_to_configure = []
+                        for idx in selected_indices:
+                            if 0 <= idx < len(hosts):
+                                hosts_to_configure.append(hosts[idx])
+                        print(f"{GREEN}✓ Selected {len(hosts_to_configure)} hosts for reconfiguration{NC}")
+                    except ValueError:
+                        print(f"{RED}✗ Invalid input. Only configuring disabled hosts.{NC}")
+                        hosts_to_configure = disabled_hosts.copy()
                 else:
-                    print(f"{display_host:44} | {RED}Failed{NC:8} | {'N/A':15} | {'N/A':9} | {'N/A':5}")
+                    print(f"{YELLOW}Invalid choice. Only configuring disabled hosts.{NC}")
+            else:
+                print(f"{GREEN}✓ Only configuring {len(disabled_hosts)} disabled hosts{NC}")
+        else:
+            print(f"{GREEN}✓ Proceeding with configuration of {len(disabled_hosts)} disabled hosts{NC}")
+        
+        # If no hosts to configure, exit
+        if not hosts_to_configure:
+            print(f"{YELLOW}No hosts selected for configuration. Exiting.{NC}")
+            return
+        
+        # Coredump Server Configuration
+        print_section("Coredump Server Configuration")
+        print("Where should ESXi hosts send core dumps?")
+        
+        # Show current detected IP and allow manual override
+        print(f"Detected vCenter IP: {vc_ip}")
+        use_detected_ip = input(f"Use detected vCenter IP ({vc_ip}) as coredump server? (Y/n): ").strip().lower()
+        
+        if use_detected_ip == 'n':
+            coredump_server_ip = input("Enter coredump server IP address: ").strip()
+        else:
+            coredump_server_ip = vc_ip
+        
+        print("\nEnter the management vmk interface for ESXi hosts.")
+        print("Reference format: vmk0, vmk1, etc.")
+        vmk_interface = input("VMK interface (e.g., vmk0): ").strip()
+        
+        use_default_port = input("Use default port 6500 for coredump? (Y/n): ").strip().lower()
+        if use_default_port == 'n':
+            coredump_port = input("Enter coredump server port: ").strip()
+        else:
+            coredump_port = "6500"
+        
+        print(f"\n{GREEN}Coredump configuration summary:{NC}")
+        print(f"  Server IP: {coredump_server_ip}")
+        print(f"  VMK Interface: {vmk_interface}")
+        print(f"  Port: {coredump_port}")
+        
+        # Test VMK Connectivity for hosts to configure
+        print_section("Testing VMK Connectivity")
+        for host in hosts_to_configure:
+            password = esxi_passwords[host]
+            print(f"\nTesting connectivity from {host}...")
+            
+            success, ping_info = test_vmk_connectivity(host, password, vmk_interface, coredump_server_ip)
+            
+            if success:
+                if ping_info:
+                    print(f"{GREEN}✓ vmkping to {coredump_server_ip} via {vmk_interface} successful ({ping_info}ms){NC}")
+                else:
+                    print(f"{GREEN}✓ vmkping to {coredump_server_ip} via {vmk_interface} successful{NC}")
+            else:
+                print(f"{RED}✗ vmkping to {coredump_server_ip} via {vmk_interface} failed{NC}")
+                print(f"  Error: {ping_info}")
+        
+        # Configure the selected hosts
+        print_section("Configuring Hosts")
+        configured_count = 0
+        for host in hosts_to_configure:
+            password = esxi_passwords[host]
+            print(f"\n{CYAN}=== {host} ==={NC}")
+            
+            print("Configuring coredump network on host...")
+            
+            success, message = configure_coredump(host, password, coredump_server_ip, vmk_interface, coredump_port)
+            
+            if success:
+                configured_count += 1
+                print(f"{GREEN}✓ Configuration completed successfully{NC}")
+                
+                print("Verifying new configuration...")
+                new_config, config_success = get_coredump_config(host, password)
+                
+                if config_success and new_config.get('enabled') == 'true':
+                    print(f"{GREEN}✓ Success: Coredump network is now enabled on {host}{NC}")
+                    print(f"  Enabled: {new_config.get('enabled', 'N/A')}")
+                    print(f"  Network Server IP: {new_config.get('server_ip', 'N/A')}")
+                    print(f"  Host VNic: {new_config.get('interface', 'N/A')}")
+                    print(f"  Network Server Port: {new_config.get('port', 'N/A')}")
+                else:
+                    print(f"{RED}✗ Warning: Configuration completed but status still shows disabled{NC}")
+            else:
+                print(f"{RED}✗ {message}{NC}")
+        
+        # Final status check for ALL hosts
+        print_section("Final Status Check")
+        print()
+        print(f"{'Hostname':44} | {'Status':8} | {'Server IP':15} | {'Interface':9} | {'Port':5}")
+        print(f"{'-'*45}+{'-'*10}+{'-'*17}+{'-'*11}+{'-'*6}")
+        
+        # Check all hosts again for final status
+        for host in hosts:
+            password = esxi_passwords[host]
+            config, success = get_coredump_config(host, password)
+            
+            display_host = host[:43]
+            
+            if success:
+                enabled = config.get('enabled', 'N/A')
+                server_ip = config.get('server_ip', 'N/A')
+                interface = config.get('interface', 'N/A')
+                port = config.get('port', 'N/A')
+                
+                if enabled == 'true':
+                    status_color = GREEN
+                    status_text = "Enabled"
+                else:
+                    status_color = RED
+                    status_text = "Disabled"
+                
+                print(f"{display_host:44} | {status_color}{status_text:8}{NC} | {server_ip:15} | {interface:9} | {port:5}")
+            else:
+                print(f"{display_host:44} | {RED}Failed{NC:8} | {'N/A':15} | {'N/A':9} | {'N/A':5}")
     
     else:
         print(f"{RED}✗ Failed to query vpxv_hosts table or no results returned{NC}")
@@ -442,10 +486,10 @@ def main():
     
     if 'hosts' in locals():
         print(f"ESXi hosts processed: {len(hosts)}")
+        if 'configured_count' in locals():
+            print(f"Hosts configured: {configured_count}")
         if 'enabled_hosts' in locals():
             print(f"Hosts already enabled: {len(enabled_hosts)}")
-        if 'disabled_hosts' in locals():
-            print(f"Hosts configured: {len(disabled_hosts)}")
         if 'unknown_hosts' in locals() and unknown_hosts:
             print(f"{RED}Hosts with connection issues: {len(unknown_hosts)}{NC}")
     
