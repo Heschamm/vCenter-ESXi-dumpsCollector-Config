@@ -178,7 +178,7 @@ def main():
     print(f"{YELLOW}*** C O R E  D U M P S  C O L L E C T O R  S C R I P T  ***{NC}")
     print(f"{YELLOW}*** AUTOMATES vCenter AND ESXi COREDUMP NETWORK CONFIGURATION AND ENABLEMENT ***{NC}")
     print("********************************************************************************")
-    print(f"{CYAN}Scripted and tested by HESHAM ABDELRAZEK in case of any bug or improvment ideas, please reach out via Hesham.abdelrazek@kyndryl.com{NC}")
+    print(f"{CYAN}Scripted and tested by HESHAM Awad in case of any bug or improvment ideas, please reach out via Hesham.awad@kyndryl.com{NC}")
     print("")
     print("")
     print(f"Hostname: {vc_fqdn}")
